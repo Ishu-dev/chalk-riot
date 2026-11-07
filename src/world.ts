@@ -21,6 +21,8 @@ export class World {
   private rainPos!: Float32Array;
   private washMat!: THREE.ShaderMaterial;
   private dryRing!: THREE.LineLoop;
+  private hemi!: THREE.HemisphereLight;
+  private bolt = 0;
   private t = 0;
 
   constructor() {
@@ -36,7 +38,8 @@ export class World {
     this.camera.position.set(0, 38, 21);
     this.camera.lookAt(0, 0, 0.6);
 
-    this.scene.add(new THREE.HemisphereLight(0xa7bccf, 0x15171a, 1.1));
+    this.hemi = new THREE.HemisphereLight(0xa7bccf, 0x15171a, 1.1);
+    this.scene.add(this.hemi);
     const sun = new THREE.DirectionalLight(0xdfe8ff, 1.4);
     sun.position.set(-12, 22, 10);
     this.scene.add(sun);
@@ -154,13 +157,24 @@ export class World {
     this.scene.add(this.dryRing);
   }
 
-  update(dt: number, dryR: number): void {
+  /** Lightning: light the court up for a moment. */
+  lightning(k: number): void {
+    this.bolt = Math.max(this.bolt, k);
+  }
+
+  /** rain: 0 drizzle to 1 downpour, sets how many streaks fall and how fast. */
+  update(dt: number, dryR: number, rain = 0): void {
     this.t += dt;
+    this.bolt = Math.max(0, this.bolt - dt * 4);
+    this.hemi.intensity = 1.1 + this.bolt * 4;
     const p = this.rainPos;
-    for (let i = 0; i < p.length / 6; i++) {
+    const n = p.length / 6;
+    this.rain.geometry.setDrawRange(0, Math.floor(n * (0.45 + 0.55 * rain)) * 2);
+    const fall = 22 + rain * 12;
+    for (let i = 0; i < n; i++) {
       const o = i * 6;
-      p[o + 1] -= 26 * dt;
-      p[o + 4] -= 26 * dt;
+      p[o + 1] -= fall * dt;
+      p[o + 4] -= fall * dt;
       p[o] -= 3 * dt;
       p[o + 3] -= 3 * dt;
       if (p[o + 1] < 0) this.resetDrop(i, 18 + Math.random() * 2);

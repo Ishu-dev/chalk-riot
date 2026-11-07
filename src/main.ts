@@ -12,7 +12,7 @@ function frame(t: number): void {
   const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
   game.update(dt);
-  world.update(dt, game.dryR());
+  world.update(dt, game.dryR(), game.rainLevel());
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

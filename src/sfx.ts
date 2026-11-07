@@ -79,6 +79,36 @@ class Sfx {
     src.stop(t + dur + 0.02);
   }
 
+  private rainBus: GainNode | null = null;
+
+  /** 0 drizzle to 1 downpour: louder rain as the dry circle shrinks. */
+  setRain(k: number): void {
+    if (this.rainBus && this.ctx) this.rainBus.gain.setTargetAtTime(0.7 + k * 0.9, this.ctx.currentTime, 0.5);
+  }
+
+  /** Thunder: a crack, then a long rolling rumble, arriving `delay` s after the flash. */
+  thunder(delay: number, vol: number): void {
+    const ctx = this.ready('thunder', 2);
+    if (!ctx) return;
+    const t = ctx.currentTime + delay;
+    this.hiss(ctx, 'lowpass', 2500, 300, 0.25, this.env(ctx, 0.35 * vol, 0.005, 0.3, t), 1, t);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.7 * vol, t + 0.15);
+    g.gain.setTargetAtTime(0.25 * vol, t + 0.3, 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 3.2);
+    g.connect(this.master);
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(260, t);
+    f.frequency.exponentialRampToValueAtTime(70, t + 3);
+    src.connect(f).connect(g);
+    src.start(t);
+    src.stop(t + 3.3);
+  }
+
   /**
    * Rain in three layers, so it reads as rain rather than hiss:
    * a soft low rumble (brown noise, not white), random droplet plinks on top,
@@ -87,8 +117,9 @@ class Sfx {
   private startRain(): void {
     const ctx = this.ctx!;
     const bus = ctx.createGain();
-    bus.gain.value = 1;
+    bus.gain.value = 0.7;
     bus.connect(this.master);
+    this.rainBus = bus;
 
     // 1. Rumble: brown noise is noise integrated over time, so its energy sits low and soft.
     const brown = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);

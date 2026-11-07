@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ARENA_R, HEROES, PLAYER_COLOR, T, TEAM_COLOR, dryRadius, type HeroId } from './config';
-import { dustTexture, heroTexture, smearTexture, wallTexture } from './chalk';
+import { dustTexture, heroFrames, smearTexture, wallTexture } from './chalk';
+import { Fx } from './fx';
 import { crosses, distToSeg, pushOut, type Seg } from './geom';
 import type { Hud } from './hud';
 import { sfx } from './sfx';
@@ -56,6 +57,14 @@ interface Actor {
   shadow: THREE.Mesh;
   hpBg: THREE.Sprite;
   hpFill: THREE.Sprite;
+  refl: THREE.Sprite; // upside-down copy: the figure reflected in the wet asphalt
+  frames: THREE.Texture[]; // line-boil redraws
+  boilOff: number;
+  squashT: number;
+  stepT: number;
+  pendingDmg: number; // hits within a few frames merge into one damage number
+  pendingAt: number;
+  pendingColor: number;
 }
 
 interface Bullet {
@@ -82,6 +91,8 @@ interface Puff {
 }
 
 const FIXED_HALF_THICK = 0.2;
+const MINT_BARKS = ['nice!', 'clean wipe', 'chalk it up', 'back to the board'];
+const CORAL_BARKS = ['smudged ya', 'eraser time', 'too slow', 'scribbled out'];
 const SPRITE = 3; // chalk figure height in metres
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -97,6 +108,8 @@ export class Game {
   player: Actor | null = null;
   private hero: HeroId = 'scribble';
   private nav = new Nav();
+  private fx: Fx;
+  private endIn: number | null = null; // real seconds of slow motion left before the result screen
 
   private dyn = new THREE.Group(); // everything a match creates; cleared on restart
   private keys = new Set<string>();
@@ -113,6 +126,7 @@ export class Game {
     private hud: Hud,
   ) {
     world.scene.add(this.dyn);
+    this.fx = new Fx(world, this.dyn);
     this.aimLine = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
       new THREE.LineDashedMaterial({ color: 0xf6f3ea, dashSize: 0.35, gapSize: 0.25, transparent: true, opacity: 0.55 }),
@@ -166,6 +180,16 @@ export class Game {
 
   start(hero: HeroId): void {
     this.hero = hero;
+    // Free last match's GPU resources; shared geometry (fx ripples, stains) stays.
+    this.dyn.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry && !m.geometry.userData.shared) m.geometry.dispose();
+      const mat = m.material as THREE.MeshBasicMaterial | undefined;
+      if (mat && 'dispose' in mat) {
+        if (mat.map?.userData.owned) mat.map.dispose();
+        mat.dispose();
+      }
+    });
     this.dyn.clear();
     this.actors = [];
     this.bullets = [];
@@ -177,6 +201,8 @@ export class Game {
     this.over = false;
     this.running = true;
     this.lastDraw = null;
+    this.endIn = null;
+    this.fx.reset();
 
     // Both teams field one of each hero, so neither side starts with a better line-up.
     const ids = Object.keys(HEROES) as HeroId[];
@@ -195,9 +221,12 @@ export class Game {
   private spawn(hero: HeroId, team: Team, x: number, z: number, isPlayer: boolean): Actor {
     const def = HEROES[hero];
     const color = isPlayer ? PLAYER_COLOR : TEAM_COLOR[team];
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: heroTexture(hero), color, transparent: true }));
+    const frames = heroFrames(hero);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: frames[0], color, transparent: true, alphaTest: 0.03 }));
     sprite.center.set(0.5, 0);
     sprite.scale.set(SPRITE, SPRITE, 1);
+    const refl = new THREE.Sprite(new THREE.SpriteMaterial({ map: frames[0], color, transparent: true, opacity: 0.22, depthWrite: false, alphaTest: 0.03 }));
+    refl.center.set(0.5, 0);
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.7, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 }));
     shadow.rotation.x = -Math.PI / 2;
     const hpBg = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x000000, transparent: true, opacity: 0.5 }));
@@ -206,7 +235,7 @@ export class Game {
       s.center.set(0, 0.5);
       s.scale.set(1.4, 0.14, 1);
     }
-    this.dyn.add(shadow, sprite, hpBg, hpFill);
+    this.dyn.add(refl, shadow, sprite, hpBg, hpFill);
     const a: Actor = {
       hero,
       team,
@@ -245,6 +274,14 @@ export class Game {
       shadow,
       hpBg,
       hpFill,
+      refl,
+      frames,
+      boilOff: Math.random() * 3,
+      squashT: 0,
+      stepT: 0,
+      pendingDmg: 0,
+      pendingAt: 0,
+      pendingColor: 0xffffff,
     };
     this.actors.push(a);
     return a;
@@ -254,13 +291,23 @@ export class Game {
     return this.running || this.over ? dryRadius(this.time) : T.dryMax;
   }
 
+  /** 0 at the start, 1 once the dry circle is at its smallest. Drives rain, sound and lightning. */
+  rainLevel(): number {
+    return (T.dryMax - this.dryR()) / (T.dryMax - T.dryMin);
+  }
+
   // ---------- frame ----------
 
-  update(dt: number): void {
+  update(realDt: number): void {
+    const p0 = this.player;
+    const rain = this.rainLevel();
+    this.fx.update(realDt, p0 && p0.alive && this.running ? { x: p0.x, z: p0.z, aim: p0.aim } : null, rain);
+    sfx.setRain(rain);
     if (!this.running) {
-      this.updatePuffs(dt);
+      this.updatePuffs(realDt);
       return;
     }
+    const dt = realDt * this.fx.timeScale();
     this.time += dt;
     const now = this.time * 1000;
     const dryR = dryRadius(this.time);
@@ -282,6 +329,12 @@ export class Game {
       a.chalk = Math.min(T.chalkMax, a.chalk + T.chalkRegen * dt);
       a.x += a.vx * dt;
       a.z += a.vz * dt;
+      a.squashT = Math.max(0, a.squashT - dt);
+      a.stepT -= dt;
+      if (a.stepT <= 0 && Math.hypot(a.vx, a.vz) > 1) {
+        a.stepT = 0.26;
+        this.burst(a.x, 0.05, a.z, 0xb8cfe0, 1); // splash of a footstep in the wet
+      }
       if (Math.hypot(a.x, a.z) > dryR) {
         a.hp -= T.washDps * dt;
         if (a.hp <= 0) this.knockOut(a, null);
@@ -300,7 +353,15 @@ export class Game {
     else if (Math.hypot(p.x, p.z) > dryR) msg = 'Get back on dry ground!';
     else if (this.time < T.rainStart) msg = `The rain closes in at ${T.rainStart - Math.floor(this.time)} s`;
     this.hud.update({ mint, coral, seconds: this.time, hpFrac: p.hp / HEROES[p.hero].hp, chalkFrac: p.chalk / T.chalkMax, ammo: p.ammo, ammoMax: HEROES[p.hero].ammo, hero: p.hero, msg });
-    if (mint === 0 || coral === 0) this.endMatch(coral === 0);
+    if (mint === 0 || coral === 0) {
+      // Last knockout: play it out in slow motion before the result screen.
+      if (this.endIn === null) {
+        this.endIn = 1.5;
+        this.fx.slowmo(1.5, 0.25);
+      }
+      this.endIn -= realDt;
+      if (this.endIn <= 0) this.endMatch(coral === 0);
+    }
   }
 
   private controlPlayer(p: Actor, now: number): void {
@@ -350,6 +411,7 @@ export class Game {
     const tex = wallTexture().clone();
     tex.repeat.set(Math.max(0.5, len / 1.5), 1);
     tex.needsUpdate = true;
+    tex.userData.owned = true; // a per-wall clone, safe to dispose with the wall
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(len + 0.15, 1.0, T.wallHalfThick * 2),
       // Unlit, like the chalk figures, so drawn cover reads clearly on dark asphalt.
@@ -518,6 +580,8 @@ export class Game {
     const def = HEROES[a.hero];
     a.ammo--;
     a.lastShot = now;
+    a.squashT = 0.12;
+    if (a.isPlayer) this.fx.shake(0.1);
     for (let i = 0; i < def.pellets; i++) {
       const off = def.pellets > 1 ? -def.spread / 2 + (def.spread * i) / (def.pellets - 1) + rand(-0.04, 0.04) : 0;
       const ang = angle + off;
@@ -568,7 +632,10 @@ export class Game {
         if (b.left <= 0) this.burst(nx, 0.6, nz, b.owner.color, 2);
         dead = true;
       }
-      if (dead) this.dyn.remove(b.sprite);
+      if (dead) {
+        this.dyn.remove(b.sprite);
+        b.sprite.material.dispose();
+      }
       else {
         b.sprite.position.set(nx, 0.9, nz);
         keep.push(b);
@@ -578,10 +645,26 @@ export class Game {
   }
 
   private damage(a: Actor, dmg: number, from: Actor, now: number): void {
-    a.hp -= a.isPlayer && !from.isPlayer ? dmg * T.botVsPlayerMult : dmg;
+    const dealt = a.isPlayer && !from.isPlayer ? dmg * T.botVsPlayerMult : dmg;
+    a.hp -= dealt;
     a.flashUntil = now + 90;
     this.burst(a.x, 1, a.z, from.color, 5);
+    this.fx.stain(a.x, a.z, from.color, 0.9);
     sfx.hit(a.isPlayer);
+    if (from.isPlayer) {
+      this.fx.hitstop(45);
+      this.fx.shake(0.16);
+    }
+    if (a.isPlayer) {
+      this.fx.hitstop(60);
+      this.fx.shake(0.45);
+      this.fx.flash(0.2, '255,138,115');
+    }
+    if (from.isPlayer || a.isPlayer) {
+      a.pendingDmg += dealt;
+      a.pendingAt = now;
+      a.pendingColor = a.isPlayer ? 0xff8a73 : 0xfff3b0;
+    }
     if (a.hp <= 0) this.knockOut(a, from);
   }
 
@@ -590,7 +673,18 @@ export class Game {
     a.alive = false;
     a.vx = a.vz = 0;
     if (from?.isPlayer) this.kos++;
-    this.dyn.remove(a.sprite, a.shadow, a.hpBg, a.hpFill);
+    this.dyn.remove(a.sprite, a.shadow, a.hpBg, a.hpFill, a.refl);
+    // Removed from the scene here, so restart cleanup will not see them: free them now.
+    a.shadow.geometry.dispose();
+    for (const o of [a.sprite, a.shadow, a.hpBg, a.hpFill, a.refl]) (o.material as THREE.Material).dispose();
+    this.fx.shake(0.5);
+    this.fx.hitstop(90);
+    this.fx.word(a.x, a.z, from ? 'ERASED!' : 'WASHED OUT', from ? from.color : 0x9fd8ff, 1.1, 1.3);
+    this.fx.stain(a.x, a.z, a.color, 2.4);
+    if (from && from.alive && Math.random() < 0.7) {
+      const lines = from.team === 0 ? MINT_BARKS : CORAL_BARKS;
+      this.fx.word(from.x, from.z, lines[Math.floor(Math.random() * lines.length)], from.color, 0.55, 1.6);
+    }
     const smear = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({ map: smearTexture(), color: a.color, transparent: true, depthWrite: false }));
     smear.rotation.x = -Math.PI / 2;
     smear.rotation.z = Math.random() * Math.PI;
@@ -647,6 +741,10 @@ export class Game {
       const m = w.mesh!;
       if (w.hp <= 0) {
         this.dyn.remove(m);
+        m.geometry.dispose();
+        const wm = m.material as THREE.MeshBasicMaterial;
+        wm.map?.dispose(); // per-wall texture clone
+        wm.dispose();
         this.nav.markDirty();
         this.burst(mx, 0.5, mz, (m.material as THREE.MeshBasicMaterial).color.getHex(), 6);
         return false;
@@ -673,6 +771,7 @@ export class Game {
       p.life -= dt;
       if (p.life <= 0) {
         this.dyn.remove(p.sprite);
+        p.sprite.material.dispose();
         return false;
       }
       p.vy -= 6 * dt;
@@ -692,13 +791,28 @@ export class Game {
       if (!a.alive) continue;
       const moving = Math.hypot(a.vx, a.vz) > 0.1;
       const bob = moving ? Math.abs(Math.sin(now / 90)) * 0.18 : 0;
+      // Line boil: swap between redraws about 8 times a second, each figure out of step.
+      const frame = a.frames[Math.floor(now / 125 + a.boilOff) % a.frames.length];
+      a.sprite.material.map = frame;
+      a.refl.material.map = frame;
+      // Squash on firing, a little stretch on each step.
+      const sq = a.squashT / 0.12;
+      const sx = SPRITE * (1 + 0.16 * sq + (moving ? 0.03 * Math.sin(now / 45) : 0));
+      const sy = SPRITE * (1 - 0.14 * sq + (moving ? 0.05 * Math.abs(Math.sin(now / 90)) : 0));
+      const flip = Math.cos(a.aim) < 0 ? -1 : 1;
       a.sprite.position.set(a.x, bob, a.z);
-      a.sprite.scale.x = Math.cos(a.aim) < 0 ? -SPRITE : SPRITE;
+      a.sprite.scale.set(sx * flip, sy, 1);
+      a.refl.position.set(a.x, 0.012, a.z);
+      a.refl.scale.set(sx * flip, -sy * 0.8, 1);
       a.sprite.material.color.setHex(now < a.flashUntil ? 0xffffff : a.color);
+      if (a.pendingDmg > 0 && now - a.pendingAt > 70) {
+        this.fx.word(a.x, a.z, String(Math.round(a.pendingDmg)), a.pendingColor, 1.0, 0.8);
+        a.pendingDmg = 0;
+      }
       a.shadow.position.set(a.x, 0.015, a.z);
       a.hpBg.position.set(a.x - 0.7 + up.x, up.y, a.z + up.z);
       a.hpFill.position.set(a.x - 0.7 + up.x, up.y, a.z + up.z);
-      a.hpFill.scale.x = 1.4 * Math.max(0, a.hp / HEROES[a.hero].hp);
+      a.hpFill.scale.x = 1.4 * Math.min(1, Math.max(0, a.hp / HEROES[a.hero].hp));
     }
     const p = this.player;
     if (p && p.alive) {

@@ -106,6 +106,41 @@ function tex(key: string, make: () => HTMLCanvasElement, repeat = false): THREE.
 
 export const heroTexture = (id: HeroId) => tex(`hero-${id}`, () => heroCanvas(id));
 
+/**
+ * Three redraws of the same hero. Each pass of chalkLine is jittered, so cycling them gives
+ * the "line boil" of hand-drawn animation: the figure looks redrawn every frame, alive.
+ */
+export const heroFrames = (id: HeroId): THREE.Texture[] => [0, 1, 2].map((k) => tex(`hero-${id}-${k}`, () => heroCanvas(id)));
+
+/** Chalk-lettered word or number, white, for tinting. Returns the texture and its aspect ratio. */
+export function textTexture(text: string): { tex: THREE.Texture; aspect: number } {
+  const key = `text-${text}`;
+  const h = 64;
+  const font = `bold 48px "Chalkboard SE", "Comic Sans MS", "Marker Felt", sans-serif`;
+  const probe = canvas(8, 8)[1];
+  probe.font = font;
+  const w = Math.ceil(probe.measureText(text).width) + 24;
+  const t = tex(key, () => {
+    const [c, g] = canvas(w, h);
+    g.font = font;
+    g.textBaseline = 'middle';
+    g.lineJoin = 'round';
+    // A dark outline so it reads over chalk and asphalt, then two offset chalk fills.
+    g.strokeStyle = 'rgba(10,12,14,0.85)';
+    g.lineWidth = 8;
+    g.strokeText(text, 12, h / 2);
+    for (let k = 0; k < 2; k++) {
+      g.fillStyle = `rgba(255,255,255,${k ? 0.55 : 0.95})`;
+      g.fillText(text, 12 + (k ? 1.5 : 0), h / 2 + (k ? -1 : 0));
+    }
+    // Rub out a few specks so the letters look chalky, not printed.
+    g.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < w * 1.2; i++) g.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5);
+    return c;
+  });
+  return { tex: t, aspect: w / h };
+}
+
 export const dustTexture = () =>
   tex('dust', () => {
     const [c, g] = canvas(32, 32);

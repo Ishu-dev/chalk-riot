@@ -27,4 +27,12 @@
 
 Both teams always field one of each hero. Your shots deal 1.8x damage and connect from 0.5 m (bots: 0.2 m); bot shots deal 0.7x damage to you. Set in `T` in `src/config.ts`. Bots on both sides chase the nearest enemy, strafe, keep to dry ground, and draw a short wall when hurt.
 
+## Game feel
+- Line boil: each figure cycles three hand-drawn redraws about 8 times a second; reflections in the wet asphalt.
+- Hits: hit-stop, screen shake, squash on firing, chalk damage numbers, chalk stains the rain slowly washes off.
+- Knockouts: "ERASED!" scrawl, a short bark from the winner, slow motion on the final knockout.
+- Weather: lightning and rolling thunder, puddle ripples, footstep splashes; rain gets heavier, louder and stormier as the dry circle shrinks. The camera drifts with you.
+
+Bots path round cover with A* on a 0.5 m grid (`src/nav.ts`).
+
 Tuning lives in `src/config.ts`. `window.__chalk` exposes the game for automated playtests.
