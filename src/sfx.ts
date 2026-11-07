@@ -79,20 +79,98 @@ class Sfx {
     src.stop(t + dur + 0.02);
   }
 
-  /** Steady rain bed under everything. */
+  /**
+   * Rain in three layers, so it reads as rain rather than hiss:
+   * a soft low rumble (brown noise, not white), random droplet plinks on top,
+   * and a slow swell so the downpour breathes instead of sitting flat.
+   */
   private startRain(): void {
     const ctx = this.ctx!;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    src.loop = true;
-    const f = ctx.createBiquadFilter();
-    f.type = 'bandpass';
-    f.frequency.value = 2500;
-    f.Q.value = 0.4;
+    const bus = ctx.createGain();
+    bus.gain.value = 1;
+    bus.connect(this.master);
+
+    // 1. Rumble: brown noise is noise integrated over time, so its energy sits low and soft.
+    const brown = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+    const d = brown.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < d.length; i++) {
+      last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+      d[i] = last * 3.5;
+    }
+    const bed = ctx.createBufferSource();
+    bed.buffer = brown;
+    bed.loop = true;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 900;
+    const bedGain = ctx.createGain();
+    bedGain.gain.value = 0.16;
+    bed.connect(lp).connect(bedGain).connect(bus);
+    bed.start();
+
+    // 2. Patter: a very quiet, gently filtered wash for the fine spray between drops.
+    const spray = ctx.createBufferSource();
+    spray.buffer = this.noise;
+    spray.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 5000;
+    bp.Q.value = 0.7;
+    const sprayGain = ctx.createGain();
+    sprayGain.gain.value = 0.012;
+    spray.connect(bp).connect(sprayGain).connect(bus);
+    spray.start();
+
+    // 3. Swell: a slow LFO on the whole bed, about one breath every 9 seconds.
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.11;
+    const depth = ctx.createGain();
+    depth.gain.value = 0.05;
+    lfo.connect(depth).connect(bedGain.gain);
+    lfo.start();
+
+    // Droplets: schedule a handful of short plinks just ahead of time.
+    let next = ctx.currentTime;
+    window.setInterval(() => {
+      if (ctx.state !== 'running') return;
+      if (next < ctx.currentTime) next = ctx.currentTime;
+      while (next < ctx.currentTime + 0.15) {
+        this.drop(ctx, bus, next);
+        next += 0.02 + Math.random() * 0.08; // uneven spacing, a few dozen drops a second
+      }
+    }, 50);
+  }
+
+  /** One drop: a tiny rising sine chirp (the "plink" of water hitting water) or a dry tick on asphalt. */
+  private drop(ctx: AudioContext, out: AudioNode, t: number): void {
+    if (this.muted) return;
     const g = ctx.createGain();
-    g.gain.value = 0.07;
-    src.connect(f).connect(g).connect(this.master);
-    src.start();
+    const peak = 0.01 + Math.random() * Math.random() * 0.05;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.002);
+    if (Math.random() < 0.55) {
+      const f = 1200 + Math.random() * 2800;
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(f, t);
+      o.frequency.exponentialRampToValueAtTime(f * 1.6, t + 0.025);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.04);
+    } else {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 2500 + Math.random() * 4000;
+      f.Q.value = 8;
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.012);
+      src.connect(f).connect(g).connect(out);
+      src.start(t, Math.random());
+      src.stop(t + 0.015);
+    }
   }
 
   shoot(hero: HeroId, near: boolean): void {

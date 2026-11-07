@@ -21,14 +21,17 @@ export interface HeroDef {
 }
 
 export const HEROES: Record<HeroId, HeroDef> = {
-  scribble: { name: 'Scribble', blurb: 'All-rounder. Steady chalk shots.', hp: 100, speed: 6, ammo: 3, reloadMs: 1100, pellets: 1, spread: 0, bulletSpeed: 22, range: 13, damage: 12 },
-  smudge: { name: 'Smudge', blurb: 'Tank. Short-range dust spray.', hp: 140, speed: 5.3, ammo: 3, reloadMs: 1300, pellets: 5, spread: 0.55, bulletSpeed: 17, range: 7, damage: 5 },
-  stretch: { name: 'Stretch', blurb: 'Sniper. Long, slow, hits hard.', hp: 80, speed: 5.6, ammo: 2, reloadMs: 1700, pellets: 1, spread: 0, bulletSpeed: 34, range: 21, damage: 21 },
+  scribble: { name: 'Scribble', blurb: 'All-rounder. Steady chalk shots.', hp: 100, speed: 6, ammo: 3, reloadMs: 1100, pellets: 1, spread: 0, bulletSpeed: 33, range: 13, damage: 12 },
+  smudge: { name: 'Smudge', blurb: 'Tank. Short-range dust spray.', hp: 140, speed: 5.3, ammo: 3, reloadMs: 1300, pellets: 5, spread: 0.55, bulletSpeed: 27, range: 7.5, damage: 5 },
+  stretch: { name: 'Stretch', blurb: 'Sniper. Long, slow, hits hard.', hp: 80, speed: 5.6, ammo: 2, reloadMs: 1700, pellets: 1, spread: 0, bulletSpeed: 48, range: 21, damage: 21 },
 };
 
 export const T = {
   actorR: 0.6,
-  bulletR: 0.2,
+  bulletR: 0.2, // bot shots, and every shot against walls
+  playerHitR: 0.5, // your shots connect from further out, so near misses still land
+  playerDamageMult: 1.8, // your shots hit harder than the same hero's bot shots
+  botVsPlayerMult: 0.7, // bot shots hurt you less than they hurt each other
   minShotGapMs: 280,
   chalkMax: 12, // metres of wall you can hold
   chalkRegen: 1.1, // metres per second

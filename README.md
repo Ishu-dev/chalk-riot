@@ -25,6 +25,6 @@
 | Smudge | tank | 140 | 3 | 5-pellet spray, short range |
 | Stretch | sniper | 80 | 2 | long range, slow reload |
 
-Both teams always field one of each hero. Bots on both sides chase the nearest enemy, strafe, keep to dry ground, and draw a short wall when hurt.
+Both teams always field one of each hero. Your shots deal 1.8x damage and connect from 0.5 m (bots: 0.2 m); bot shots deal 0.7x damage to you. Set in `T` in `src/config.ts`. Bots on both sides chase the nearest enemy, strafe, keep to dry ground, and draw a short wall when hurt.
 
 Tuning lives in `src/config.ts`. `window.__chalk` exposes the game for automated playtests.

@@ -54,6 +54,7 @@ interface Bullet {
   speed: number;
   left: number;
   damage: number;
+  hitR: number;
   team: Team;
   owner: Actor;
   sprite: THREE.Sprite;
@@ -417,10 +418,10 @@ export class Game {
       const dx = Math.cos(ang);
       const dz = Math.sin(ang);
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: dustTexture(), color: a.color, transparent: true, depthWrite: false }));
-      const size = a.hero === 'smudge' ? 0.45 : a.hero === 'stretch' ? 0.5 : 0.6;
+      const size = (a.hero === 'smudge' ? 0.45 : a.hero === 'stretch' ? 0.5 : 0.6) * (a.isPlayer ? 1.5 : 1);
       sprite.scale.set(size, size, 1);
       this.dyn.add(sprite);
-      this.bullets.push({ x: a.x + dx * 0.7, z: a.z + dz * 0.7, dx, dz, speed: def.bulletSpeed, left: def.range, damage: def.damage, team: a.team, owner: a, sprite });
+      this.bullets.push({ x: a.x + dx * 0.7, z: a.z + dz * 0.7, dx, dz, speed: def.bulletSpeed, left: def.range, damage: def.damage * (a.isPlayer ? T.playerDamageMult : 1), hitR: a.isPlayer ? T.playerHitR : T.bulletR, team: a.team, owner: a, sprite });
     }
     const p = this.player;
     sfx.shoot(a.hero, a.isPlayer || (!!p && Math.hypot(p.x - a.x, p.z - a.z) < 9));
@@ -447,7 +448,7 @@ export class Game {
         const seg = { ax: b.x, az: b.z, bx: nx, bz: nz };
         for (const a of this.actors) {
           if (!a.alive || a.team === b.team) continue;
-          if (distToSeg(a.x, a.z, seg) < T.actorR + T.bulletR) {
+          if (distToSeg(a.x, a.z, seg) < T.actorR + b.hitR) {
             this.damage(a, b.damage, b.owner, now);
             dead = true;
             break;
@@ -471,7 +472,7 @@ export class Game {
   }
 
   private damage(a: Actor, dmg: number, from: Actor, now: number): void {
-    a.hp -= dmg;
+    a.hp -= a.isPlayer && !from.isPlayer ? dmg * T.botVsPlayerMult : dmg;
     a.flashUntil = now + 90;
     this.burst(a.x, 1, a.z, from.color, 5);
     sfx.hit(a.isPlayer);
