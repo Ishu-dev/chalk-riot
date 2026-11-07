@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chalk Riot</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #16181b; color: #f2efe6;
+        font-family: "Chalkboard SE", "Comic Sans MS", "Marker Felt", system-ui, sans-serif; user-select: none; }
+      canvas { display: block; }
+      #hud { position: fixed; inset: 0; pointer-events: none; }
+      .top { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 22px; align-items: center; font-size: 26px; }
+      .pips i { display: inline-block; width: 14px; height: 14px; margin: 0 3px; border-radius: 50%; border: 2px solid currentColor; }
+      .pips i.on { background: currentColor; }
+      .mint { color: #7fe3c4; } .coral { color: #ff8a73; }
+      .panel { position: absolute; left: 16px; bottom: 16px; background: rgba(0,0,0,.35); padding: 10px 14px; border: 2px solid rgba(242,239,230,.5); border-radius: 10px; min-width: 210px; }
+      .name { font-size: 20px; margin-bottom: 6px; }
+      .bar { height: 10px; border: 2px solid #f2efe6; border-radius: 6px; margin: 4px 0 8px; overflow: hidden; }
+      .fill { height: 100%; background: #f2efe6; width: 100%; }
+      .fill.chalk { background: #9fd8ff; }
+      .ammo span { display: inline-block; width: 18px; height: 10px; border: 2px solid #f2efe6; border-radius: 4px; margin-right: 5px; }
+      .ammo span.on { background: #f2efe6; }
+      .help { position: absolute; right: 16px; bottom: 16px; font-size: 13px; opacity: .65; text-align: right; line-height: 1.5; }
+      .msg { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); font-size: 18px; opacity: .85; }
+      .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background: rgba(10,11,13,.72); pointer-events: auto; text-align: center; }
+      .overlay h1 { font-size: 84px; margin: 0 0 6px; letter-spacing: 3px; }
+      .overlay p { margin: 6px; font-size: 18px; opacity: .85; }
+      .heroes { display: flex; gap: 18px; margin: 22px 0; }
+      .hero { width: 180px; padding: 12px; border: 3px dashed rgba(242,239,230,.6); border-radius: 14px; cursor: pointer; }
+      .hero:hover, .hero.sel { border-style: solid; border-color: #f2efe6; background: rgba(242,239,230,.08); }
+      .hero b { font-size: 22px; display: block; margin-bottom: 4px; }
+      .hero small { font-size: 14px; opacity: .8; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
