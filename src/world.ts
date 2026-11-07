@@ -23,6 +23,8 @@ export class World {
   private dryRing!: THREE.LineLoop;
   private hemi!: THREE.HemisphereLight;
   private bolt = 0;
+  /** Camera distance multiplier: >1 on narrow (portrait) screens so the whole court fits across. */
+  zoom = 1;
   private t = 0;
 
   constructor() {
@@ -34,7 +36,7 @@ export class World {
 
     this.scene.background = new THREE.Color(0x121417);
     this.scene.fog = new THREE.Fog(0x121417, 40, 80);
-    this.camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 200);
+    this.camera = new THREE.PerspectiveCamera(40, 16 / 9, 8, 260);
     this.camera.position.set(0, 38, 21);
     this.camera.lookAt(0, 0, 0.6);
 
@@ -192,8 +194,18 @@ export class World {
     this.renderer.setSize(w, h);
     const aspect = w / h;
     this.camera.aspect = aspect;
-    // Keep the whole court in view on narrow screens.
-    this.camera.fov = Math.min(80, 40 * Math.max(1, 1.6 / aspect));
+    // Keep the court in view on narrow screens. Narrower than 16:10? Widen the lens up to 60
+    // degrees first, then pull the camera back for the rest. Pulling back alone (3.5x on a
+    // portrait phone) made heroes tiny and made the ground layers z-fight.
+    const need = Math.tan((20 * Math.PI) / 180) * 1.6 * 0.92; // half-width of the 16:10 view, trimmed a little
+    const fov = Math.min(60, Math.max(40, (2 * Math.atan(need / aspect) * 180) / Math.PI));
+    this.camera.fov = fov;
+    this.zoom = Math.max(1, need / (Math.tan((fov * Math.PI) / 360) * aspect));
+    // Fog is tuned for the default camera distance; push it back with the camera or a
+    // pulled-back portrait view fades the whole court into the background colour.
+    const fog = this.scene.fog as THREE.Fog;
+    fog.near = 40 * this.zoom;
+    fog.far = 80 * this.zoom;
     this.camera.updateProjectionMatrix();
   }
 

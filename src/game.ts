@@ -7,6 +7,7 @@ import type { Hud } from './hud';
 import { sfx } from './sfx';
 import { FIXED_COVER, type World } from './world';
 import { Nav, type Pt } from './nav';
+import type { Touch } from './touch';
 
 type Team = 0 | 1;
 
@@ -124,6 +125,7 @@ export class Game {
   constructor(
     private world: World,
     private hud: Hud,
+    private touch: Touch,
   ) {
     world.scene.add(this.dyn);
     this.fx = new Fx(world, this.dyn);
@@ -159,13 +161,18 @@ export class Game {
       this.keys.clear();
       this.shootHeld = this.drawHeld = false;
     });
-    window.addEventListener('pointermove', (e) => this.world.groundPoint(e.clientX, e.clientY, this.mouse));
+    // Mouse and pen only: touches are handled by the Touch sticks.
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'touch') this.world.groundPoint(e.clientX, e.clientY, this.mouse);
+    });
     el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') return;
       this.world.groundPoint(e.clientX, e.clientY, this.mouse);
       if (e.button === 0) this.shootHeld = true;
       if (e.button === 2) this.drawHeld = true;
     });
     window.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'touch') return;
       if (e.button === 0) this.shootHeld = false;
       if (e.button === 2) this.drawHeld = false;
     });
@@ -205,6 +212,7 @@ export class Game {
     this.fx.reset();
     sfx.setStorm(0);
     sfx.startMusic();
+    this.touch.setPlaying(true);
 
     // Both teams field one of each hero, so neither side starts with a better line-up.
     const ids = Object.keys(HEROES) as HeroId[];
@@ -368,24 +376,54 @@ export class Game {
   }
 
   private controlPlayer(p: Actor, now: number): void {
+    const t = this.touch;
     let mx = (this.key('KeyD', 'ArrowRight') ? 1 : 0) - (this.key('KeyA', 'ArrowLeft') ? 1 : 0);
     let mz = (this.key('KeyS', 'ArrowDown') ? 1 : 0) - (this.key('KeyW', 'ArrowUp') ? 1 : 0);
     const l = Math.hypot(mx, mz);
     if (l > 0) {
       mx /= l;
       mz /= l;
+    } else if (t.active) {
+      // The stick is analogue: a small push walks, a full push runs.
+      mx = t.move.x;
+      mz = t.move.z;
     }
     const speed = HEROES[p.hero].speed;
     p.vx = mx * speed;
     p.vz = mz * speed;
-    p.aim = Math.atan2(this.mouse.z - p.z, this.mouse.x - p.x);
-    if (this.shootHeld) this.tryShoot(p, p.aim, now);
+    if (!t.active) p.aim = Math.atan2(this.mouse.z - p.z, this.mouse.x - p.x);
+    else if (t.aiming) p.aim = t.aim;
+    else {
+      // Not aiming: point at the nearest enemy, so a tap shot and the aim line are useful.
+      const foe = this.nearestFoe(p);
+      if (foe) p.aim = Math.atan2(foe.z - p.z, foe.x - p.x);
+    }
+    if (this.shootHeld || t.fire) this.tryShoot(p, p.aim, now);
+    if (t.tapShot) {
+      t.tapShot = false;
+      this.tryShoot(p, p.aim, now);
+    }
+    if (t.drawing) this.world.groundPoint(t.drawX, t.drawY, this.mouse);
 
-    const drawing = this.drawHeld || this.key('ShiftLeft', 'ShiftRight');
+    const drawing = this.drawHeld || this.key('ShiftLeft', 'ShiftRight') || t.drawing;
     if (drawing) this.drawStep(p);
     else this.lastDraw = null;
     this.reach.visible = drawing;
     this.reach.position.set(p.x, 0.05, p.z);
+  }
+
+  private nearestFoe(a: Actor): Actor | null {
+    let best: Actor | null = null;
+    let bd = Infinity;
+    for (const o of this.actors) {
+      if (!o.alive || o.team === a.team) continue;
+      const d = Math.hypot(o.x - a.x, o.z - a.z);
+      if (d < bd) {
+        bd = d;
+        best = o;
+      }
+    }
+    return best;
   }
 
   /** Lay chalk wall along the cursor path, within reach of the player, while chalk lasts. */
@@ -837,6 +875,8 @@ export class Game {
     this.aimLine.visible = this.marker.visible = this.reach.visible = false;
     sfx.stopMusic();
     sfx.end(won);
+    this.touch.release();
+    this.touch.setPlaying(false);
     this.hud.result(won, this.time, this.kos, () => this.hud.title((h) => this.start(h)));
   }
 }

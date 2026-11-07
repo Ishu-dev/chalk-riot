@@ -1,11 +1,13 @@
 import { Game } from './game';
+import { Touch } from './touch';
 import { Hud } from './hud';
 import { World } from './world';
 import { sfx } from './sfx';
 
 const world = new World();
 const hud = new Hud();
-const game = new Game(world, hud);
+const touch = new Touch();
+const game = new Game(world, hud, touch);
 hud.title((hero) => game.start(hero));
 (window as unknown as { __sfx: typeof sfx }).__sfx = sfx; // test hook, like window.__chalk
 

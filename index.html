@@ -2,10 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#16181b" />
     <title>Chalk Riot</title>
     <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #16181b; color: #f2efe6;
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #16181b; color: #f2efe6; touch-action: none; -webkit-touch-callout: none; overscroll-behavior: none;
         font-family: "Chalkboard SE", "Comic Sans MS", "Marker Felt", system-ui, sans-serif; user-select: none; }
       canvas { display: block; }
       #hud { position: fixed; inset: 0; pointer-events: none; }
@@ -32,6 +33,50 @@
       .hero b { font-size: 22px; display: block; margin-bottom: 4px; }
       .hero small { font-size: 14px; opacity: .8; }
       .hidden { display: none; }
+
+      /* Touch controls (shown after the first touch) */
+      .stick { position: fixed; display: none; border-radius: 50%; pointer-events: none; z-index: 5; }
+      .stick.base { border: 3px dashed rgba(242,239,230,.55); background: rgba(242,239,230,.06); }
+      .stick.knob { background: rgba(242,239,230,.55); }
+      .stick.aim.base { border-color: rgba(255,138,115,.6); }
+      .stick.aim.knob { background: rgba(255,138,115,.6); }
+      .chalk-btn { display: none; position: fixed; right: calc(18px + env(safe-area-inset-right)); bottom: calc(150px + env(safe-area-inset-bottom));
+        width: 64px; height: 64px; border-radius: 50%; border: 3px dashed #9fd8ff; color: #9fd8ff; font-size: 26px; line-height: 44px;
+        text-align: center; z-index: 6; background: rgba(0,0,0,.35); }
+      .chalk-btn small { display: block; font-size: 11px; line-height: 4px; }
+      .chalk-btn.on { border-style: solid; background: rgba(159,216,255,.25); color: #fff; }
+      .touch.playing .chalk-btn { display: block; }
+      .touch .help { display: none; }
+      .rotate-hint { display: none; position: fixed; top: 96px; left: 50%; transform: translateX(-50%); z-index: 4; pointer-events: none;
+        font-size: 14px; padding: 6px 12px; border: 2px dashed rgba(242,239,230,.5); border-radius: 10px; background: rgba(0,0,0,.4); white-space: nowrap; }
+
+      /* Short screens: phones in landscape */
+      @media (max-height: 520px) {
+        .top { font-size: 18px; top: 6px; gap: 12px; }
+        .pips i { width: 10px; height: 10px; }
+        .msg { top: 34px; font-size: 13px; }
+        .panel { left: calc(8px + env(safe-area-inset-left)); bottom: 8px; padding: 6px 10px; min-width: 130px; font-size: 12px; }
+        .name { font-size: 14px; margin-bottom: 2px; }
+        .bar { height: 6px; margin: 2px 0 5px; }
+        .overlay h1 { font-size: 44px; }
+        .overlay p { font-size: 14px; margin: 3px; }
+        .heroes { gap: 10px; margin: 10px 0; }
+        .hero { width: 140px; padding: 8px; }
+        .hero b { font-size: 17px; }
+        .hero small { font-size: 12px; }
+        .chalk-btn { bottom: calc(110px + env(safe-area-inset-bottom)); width: 54px; height: 54px; line-height: 36px; font-size: 22px; }
+      }
+      /* Narrow screens: phones in portrait */
+      @media (max-width: 560px) {
+        .overlay h1 { font-size: 46px; }
+        .heroes { flex-direction: column; gap: 8px; margin: 12px 0; }
+        .hero { width: 230px; padding: 8px; }
+        .panel { min-width: 120px; font-size: 12px; padding: 6px 10px; }
+        .top { font-size: 18px; gap: 12px; white-space: nowrap; }
+        .pips { white-space: nowrap; }
+        .pips i { width: 10px; height: 10px; margin: 0 2px; }
+        .msg { top: 40px; font-size: 13px; }
+      }
     </style>
   </head>
   <body>

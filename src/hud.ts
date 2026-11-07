@@ -66,10 +66,12 @@ export class Hud {
       <div class="heroes">${ids
         .map((id, i) => `<div class="hero" data-id="${id}"><b>${i + 1}. ${HEROES[id].name}</b><small>${HEROES[id].blurb}</small></div>`)
         .join('')}</div>
-      <p>click a hero or press 1, 2, 3</p>`;
+      <p>${document.body.classList.contains('touch') ? 'tap a hero' : 'click a hero or press 1, 2, 3'}</p>`;
     this.overlay.classList.remove('hidden');
     const go = (id: HeroId) => {
       window.removeEventListener('keydown', onKey);
+      // On phones, go full screen when the match starts (where the browser allows it).
+      if (document.body.classList.contains('touch') && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
       this.overlay.classList.add('hidden');
       onStart(id);
     };
@@ -85,7 +87,7 @@ export class Hud {
     this.overlay.innerHTML = `
       <h1 class="${won ? 'mint' : 'coral'}">${won ? 'COURT CLEARED' : 'WASHED OUT'}</h1>
       <p>${Math.floor(seconds)} s &middot; your knockouts: ${kos}</p>
-      <p>press R or click for a rematch</p>`;
+      <p>press R, or click or tap, for a rematch</p>`;
     this.overlay.classList.remove('hidden');
     const again = () => {
       window.removeEventListener('keydown', onKey);

@@ -148,7 +148,8 @@ export class Fx {
     const shake = new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s * 0.5, (Math.random() - 0.5) * s);
     this.shakeAmt = Math.max(0, s - dt * 3.2);
     const cam = this.world.camera;
-    cam.position.copy(CAM_POS).add(this.drift).add(shake);
+    const z = this.world.zoom;
+    cam.position.copy(CAM_LOOK).addScaledVector(CAM_POS.clone().sub(CAM_LOOK), z).add(this.drift).add(shake);
     cam.lookAt(CAM_LOOK.clone().add(this.drift));
 
     this.floats = this.floats.filter((f) => {
