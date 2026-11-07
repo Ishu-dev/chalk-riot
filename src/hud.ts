@@ -23,7 +23,7 @@ export class Hud {
         chalk<div class="bar"><div class="fill chalk"></div></div>
         <div class="ammo"></div>
       </div>
-      <div class="help">WASD move &middot; mouse aim &middot; left click shoot<br>hold right click or Shift and move the mouse to draw cover<br>M mute</div>
+      <div class="help">WASD move &middot; mouse aim &middot; left click shoot<br>hold right click or Shift and move the mouse to draw cover<br>M mute sound and music</div>
       <div class="overlay hidden"></div>`;
     const q = (s: string) => this.root.querySelector(s) as HTMLElement;
     this.mint = q('.mint');

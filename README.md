@@ -10,7 +10,7 @@
 - WASD / arrows: move
 - Mouse: aim. Left click (hold): shoot
 - Hold right click, or hold Shift, and move the mouse: draw chalk cover (within the dashed reach circle)
-- M: mute
+- M: mute sound and music
 - Title: 1 / 2 / 3 or click to pick a hero. R or click on the result screen for a rematch.
 
 ## Core mechanics
@@ -32,6 +32,7 @@ Both teams always field one of each hero. Your shots deal 1.8x damage and connec
 - Hits: hit-stop, screen shake, squash on firing, chalk damage numbers, chalk stains the rain slowly washes off.
 - Knockouts: "ERASED!" scrawl, a short bark from the winner, slow motion on the final knockout.
 - Weather: lightning and rolling thunder, puddle ripples, footstep splashes; rain gets heavier, louder and stormier as the dry circle shrinks. The camera drifts with you.
+- Music: procedural D minor loop (i - VI - iv - V) from 84 to 130 BPM. It starts as a pad, a soft kick and chalk scratches, then adds bass, claps, an arpeggio and 16th hats as the storm builds.
 
 Bots path round cover with A* on a 0.5 m grid (`src/nav.ts`).
 

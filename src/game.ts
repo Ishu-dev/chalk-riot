@@ -203,6 +203,8 @@ export class Game {
     this.lastDraw = null;
     this.endIn = null;
     this.fx.reset();
+    sfx.setStorm(0);
+    sfx.startMusic();
 
     // Both teams field one of each hero, so neither side starts with a better line-up.
     const ids = Object.keys(HEROES) as HeroId[];
@@ -303,6 +305,7 @@ export class Game {
     const rain = this.rainLevel();
     this.fx.update(realDt, p0 && p0.alive && this.running ? { x: p0.x, z: p0.z, aim: p0.aim } : null, rain);
     sfx.setRain(rain);
+    if (this.running) sfx.setStorm(rain);
     if (!this.running) {
       this.updatePuffs(realDt);
       return;
@@ -832,6 +835,7 @@ export class Game {
     this.running = false;
     this.shootHeld = this.drawHeld = false;
     this.aimLine.visible = this.marker.visible = this.reach.visible = false;
+    sfx.stopMusic();
     sfx.end(won);
     this.hud.result(won, this.time, this.kos, () => this.hud.title((h) => this.start(h)));
   }
