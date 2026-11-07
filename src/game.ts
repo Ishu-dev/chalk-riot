@@ -5,6 +5,7 @@ import { crosses, distToSeg, pushOut, type Seg } from './geom';
 import type { Hud } from './hud';
 import { sfx } from './sfx';
 import { FIXED_COVER, type World } from './world';
+import { Nav, type Pt } from './nav';
 
 type Team = 0 | 1;
 
@@ -20,6 +21,17 @@ interface Bot {
   strafeT: number;
   react: number;
   wallReadyAt: number;
+  path: Pt[] | null; // waypoints round cover when the target is out of sight
+  repathAt: number;
+  checkAt: number; // stuck watchdog
+  lastX: number;
+  lastZ: number;
+  unstickUntil: number;
+  unstickAng: number;
+  routing: boolean; // following a path (target out of sight) vs fighting in the open
+  seenFor: number; // seconds of continuous sight / no sight, for hysteresis
+  lostFor: number;
+  target: Actor | null;
 }
 
 interface Actor {
@@ -84,6 +96,7 @@ export class Game {
   kos = 0;
   player: Actor | null = null;
   private hero: HeroId = 'scribble';
+  private nav = new Nav();
 
   private dyn = new THREE.Group(); // everything a match creates; cleared on restart
   private keys = new Set<string>();
@@ -158,6 +171,7 @@ export class Game {
     this.bullets = [];
     this.puffs = [];
     this.walls = FIXED_COVER.map((seg) => ({ seg, hp: Infinity, fixed: true }));
+    this.nav.markDirty();
     this.time = 0;
     this.kos = 0;
     this.over = false;
@@ -210,7 +224,23 @@ export class Game {
       alive: true,
       aim: team === 0 ? 0 : Math.PI,
       flashUntil: 0,
-      bot: { strafeSign: Math.random() < 0.5 ? -1 : 1, strafeT: rand(1, 2.5), react: rand(0.3, 0.8), wallReadyAt: rand(2000, 5000) },
+      bot: {
+        strafeSign: Math.random() < 0.5 ? -1 : 1,
+        strafeT: rand(1, 2.5),
+        react: rand(0.3, 0.8),
+        wallReadyAt: rand(2000, 5000),
+        path: null,
+        repathAt: 0,
+        checkAt: 600,
+        lastX: x,
+        lastZ: z,
+        unstickUntil: 0,
+        unstickAng: 0,
+        routing: false,
+        seenFor: 0,
+        lostFor: 0,
+        target: null,
+      },
       sprite,
       shadow,
       hpBg,
@@ -329,6 +359,7 @@ export class Game {
     mesh.rotation.y = -Math.atan2(seg.bz - seg.az, seg.bx - seg.ax);
     this.dyn.add(mesh);
     this.walls.push({ seg, hp: T.wallHp, fixed: false, mesh });
+    this.nav.markDirty();
   }
 
   private clearShot(ax: number, az: number, bx: number, bz: number): boolean {
@@ -339,21 +370,26 @@ export class Game {
 
   private think(a: Actor, dt: number, now: number, dryR: number): void {
     const def = HEROES[a.hero];
+    // Keep the current target unless someone else is clearly closer; flipping between two
+    // near-equal targets made bots dither on the spot.
     let target: Actor | null = null;
     let best = Infinity;
     for (const o of this.actors) {
       if (!o.alive || o.team === a.team) continue;
-      const d = Math.hypot(o.x - a.x, o.z - a.z);
-      if (d < best) {
-        best = d;
+      const dd = Math.hypot(o.x - a.x, o.z - a.z);
+      if (dd < best) {
+        best = dd;
         target = o;
       }
     }
+    const cur = a.bot.target;
+    if (cur && cur.alive && target && cur !== target && Math.hypot(cur.x - a.x, cur.z - a.z) < best * 1.25) target = cur;
+    a.bot.target = target;
     if (!target) {
       a.vx = a.vz = 0;
       return;
     }
-    const d = best;
+    const d = Math.hypot(target.x - a.x, target.z - a.z);
     const ux = (target.x - a.x) / d;
     const uz = (target.z - a.z) / d;
     const los = this.clearShot(a.x, a.z, target.x, target.z);
@@ -361,29 +397,76 @@ export class Game {
 
     let mx = 0;
     let mz = 0;
-    if (!los || d > want) {
-      mx += ux;
-      mz += uz;
-    } else if (d < want * 0.55) {
-      mx -= ux;
-      mz -= uz;
+    const bot = a.bot;
+    // Hysteresis: sight lines graze wall ends, so LOS flickers. Only change mode once the
+    // new state has held for a moment, otherwise the bot alternates path/strafe every frame.
+    if (los) {
+      bot.seenFor += dt;
+      bot.lostFor = 0;
+    } else {
+      bot.lostFor += dt;
+      bot.seenFor = 0;
     }
-    a.bot.strafeT -= dt;
-    if (a.bot.strafeT <= 0) {
-      a.bot.strafeSign = Math.random() < 0.5 ? -1 : 1;
-      a.bot.strafeT = rand(1.2, 3);
+    if (!bot.routing && bot.lostFor > 0.35) bot.routing = true;
+    else if (bot.routing && bot.seenFor > 0.3) bot.routing = false;
+    if (bot.routing) {
+      // Out of sight: follow an A* route round the cover instead of pushing into it.
+      if (!bot.path || now >= bot.repathAt) {
+        bot.path = this.nav.path(a.x, a.z, target.x, target.z, this.walls);
+        bot.repathAt = now + rand(400, 700);
+      }
+      const wp = this.nextWaypoint(a);
+      mx = wp ? wp.x - a.x : ux;
+      mz = wp ? wp.z - a.z : uz;
+      const l = Math.hypot(mx, mz) || 1;
+      mx /= l;
+      mz /= l;
+    } else {
+      bot.path = null;
+      if (d > want) {
+        mx += ux;
+        mz += uz;
+      } else if (d < want * 0.55) {
+        mx -= ux;
+        mz -= uz;
+      }
+      bot.strafeT -= dt;
+      if (bot.strafeT <= 0) {
+        bot.strafeSign = Math.random() < 0.5 ? -1 : 1;
+        bot.strafeT = rand(1.2, 3);
+      }
+      mx += -uz * bot.strafeSign * 0.8;
+      mz += ux * bot.strafeSign * 0.8;
     }
-    const strafe = los ? 0.8 : 1.3; // without a line of sight, slide sideways to get round cover
-    mx += -uz * a.bot.strafeSign * strafe;
-    mz += ux * a.bot.strafeSign * strafe;
     const rc = Math.hypot(a.x, a.z);
     if (rc > dryR - 2.5 && rc > 0) {
       mx -= (a.x / rc) * 2.5;
       mz -= (a.z / rc) * 2.5;
     }
-    const ml = Math.hypot(mx, mz) || 1;
-    a.vx = (mx / ml) * def.speed * 0.9;
-    a.vz = (mz / ml) * def.speed * 0.9;
+
+    // Stuck watchdog: barely moved in 0.6 s while trying to? Repath and shuffle sideways briefly.
+    if (now >= bot.checkAt) {
+      if (Math.hypot(a.x - bot.lastX, a.z - bot.lastZ) < 0.5 && Math.hypot(mx, mz) > 0.1) {
+        bot.unstickUntil = now + 450;
+        bot.unstickAng = Math.atan2(mz, mx) + (Math.random() < 0.5 ? 1 : -1) * rand(1.2, 2.2);
+        bot.path = null;
+        bot.repathAt = 0;
+      }
+      bot.lastX = a.x;
+      bot.lastZ = a.z;
+      bot.checkAt = now + 600;
+    }
+    if (now < bot.unstickUntil) {
+      mx = Math.cos(bot.unstickAng);
+      mz = Math.sin(bot.unstickAng);
+    }
+
+    const ml = Math.hypot(mx, mz);
+    if (ml > 0.01) {
+      [mx, mz] = this.freeDirection(a, mx / ml, mz / ml);
+      a.vx = mx * def.speed * 0.9;
+      a.vz = mz * def.speed * 0.9;
+    } else a.vx = a.vz = 0;
     a.aim = Math.atan2(uz, ux);
 
     if (los && d <= def.range * 0.95) {
@@ -403,6 +486,29 @@ export class Game {
       a.bot.wallReadyAt = now + T.botWallCdMs;
       if (this.player && Math.hypot(this.player.x - a.x, this.player.z - a.z) < 10) sfx.scratch();
     }
+  }
+
+  private nextWaypoint(a: Actor): Pt | null {
+    const path = a.bot.path;
+    if (!path) return null;
+    while (path.length > 1 && Math.hypot(path[0].x - a.x, path[0].z - a.z) < 0.5) path.shift();
+    return path[0] ?? null;
+  }
+
+  /** If the way ahead is blocked, turn by the smallest angle (up to 120 degrees) that is clear. */
+  private freeDirection(a: Actor, dx: number, dz: number): [number, number] {
+    const probe = 1.1;
+    if (this.nav.walkable(a.x, a.z, a.x + dx * probe, a.z + dz * probe, this.walls)) return [dx, dz];
+    const base = Math.atan2(dz, dx);
+    for (const off of [0.5, 1, 1.5, 2.1]) {
+      for (const s of [1, -1]) {
+        const ang = base + off * s;
+        const cx = Math.cos(ang);
+        const cz = Math.sin(ang);
+        if (this.nav.walkable(a.x, a.z, a.x + cx * probe, a.z + cz * probe, this.walls)) return [cx, cz];
+      }
+    }
+    return [dx, dz];
   }
 
   // ---------- combat ----------
@@ -541,6 +647,7 @@ export class Game {
       const m = w.mesh!;
       if (w.hp <= 0) {
         this.dyn.remove(m);
+        this.nav.markDirty();
         this.burst(mx, 0.5, mz, (m.material as THREE.MeshBasicMaterial).color.getHex(), 6);
         return false;
       }
