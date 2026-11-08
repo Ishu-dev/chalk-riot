@@ -1,5 +1,9 @@
 # Chalk Riot
 
+**Play: https://ishu-dev.github.io/chalk-riot/** or on itch.io: https://ishu-dev.itch.io/chalk-riot
+
+![Chalk Riot gameplay](docs/gameplay.gif)
+
 3v3 top-down arena brawler prototype. Chalk doodle heroes on wet asphalt, rain washing the court away. Vite + TypeScript + Three.js. Everything (characters, walls, ground, sound) is generated in code; there are no asset files.
 
     npm install
@@ -12,6 +16,7 @@
 - Hold right click, or hold Shift, and move the mouse: draw chalk cover (within the dashed reach circle)
 - M: mute sound and music
 - Title: 1 / 2 / 3 or click to pick a hero. R or click on the result screen for a rematch.
+- Phone (landscape): left thumb is the move stick, right thumb drags to aim and fire or taps for an auto-aimed shot, the draw button switches the right thumb to drawing cover.
 
 ## Core mechanics
 - Shooting: twin-stick aim with stored shots that recharge one at a time.
